@@ -47,7 +47,7 @@ func DefinitionDomain(a [][]bool) []int {
 	res := make([]int, 0, len(a))
 	for i := range a {
 		for j := range a[0] {
-			if i != j && a[i][j] && !slices.Contains(res, i) {
+			if a[i][j] && !slices.Contains(res, i) {
 				res = append(res, i)
 				break
 			}
@@ -64,7 +64,7 @@ func MeaningDomain(a [][]bool) []int {
 	res := make([]int, 0, len(a))
 	for i := range a {
 		for j := range a[0] {
-			if i != j && a[i][j] && !slices.Contains(res, j) {
+			if a[i][j] && !slices.Contains(res, j) {
 				res = append(res, j)
 				break
 			}
