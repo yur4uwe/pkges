@@ -1,6 +1,9 @@
 package binrels
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func Copy(a [][]bool) [][]bool {
 	if len(a) == 0 {
@@ -84,7 +87,9 @@ func PrintWithSource(source []string, relationship [][]bool) {
 func Print(relationship [][]bool) {
 	for i := range relationship {
 		fmt.Println()
-		fmt.Println("--------------------")
+		if i != 0 {
+			fmt.Println(strings.Repeat("----", len(relationship[i])))
+		}
 		for j := range relationship[i] {
 			if relationship[i][j] {
 				fmt.Printf(" 1 ")
@@ -92,7 +97,7 @@ func Print(relationship [][]bool) {
 				fmt.Printf(" 0 ")
 			}
 			if j < len(relationship[i])-1 {
-				fmt.Printf("| ")
+				fmt.Printf("|")
 			}
 		}
 	}
