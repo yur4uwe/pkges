@@ -119,6 +119,10 @@ func (g *Graph) Draw() error {
 		return fmt.Errorf("no data to plot")
 	}
 
+	if g.ls == nil {
+		return fmt.Errorf("line style is not set")
+	}
+
 	minX, maxX, minY, maxY := g.Borders()
 	scaleX := wwidth / (maxX - minX)
 	scaleY := wheight / (maxY - minY)
