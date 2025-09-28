@@ -25,10 +25,11 @@ var plotColors = [][3]float64{
 }
 
 type Graph struct {
-	dc    *gg.Context
-	ls    *LineStyle
-	xArgs [][]float64
-	yArgs [][]float64
+	dc          *gg.Context
+	ls          *LineStyle
+	xArgs       [][]float64
+	yArgs       [][]float64
+	pointLabels [][]string
 }
 
 func NewGraph() *Graph {
@@ -60,8 +61,8 @@ func (g *Graph) SavePNG(filename string, replace ...bool) error {
 	return g.dc.SavePNG(name + ext)
 }
 
-func (g *Graph) Plot(x, y []float64) {
-	if len(x) == 0 || len(y) == 0 {
+func (g *Graph) Plot(x, y []float64, labels ...[]string) {
+	if len(x) == 0 || len(y) == 0 || (len(labels[0]) != len(x)) {
 		return
 	}
 
@@ -71,6 +72,7 @@ func (g *Graph) Plot(x, y []float64) {
 
 	g.xArgs = append(g.xArgs, x)
 	g.yArgs = append(g.yArgs, y)
+	g.pointLabels = append(g.pointLabels, labels[0])
 }
 
 func (g *Graph) Borders() (float64, float64, float64, float64) {
@@ -123,6 +125,11 @@ func (g *Graph) Draw() error {
 		return fmt.Errorf("line style is not set")
 	}
 
+	err := g.dc.LoadFontFace("ArialMT.ttf", 14)
+	if err != nil {
+		return err
+	}
+
 	minX, maxX, minY, maxY := g.Borders()
 	scaleX := wwidth / (maxX - minX)
 	scaleY := wheight / (maxY - minY)
@@ -159,6 +166,16 @@ func (g *Graph) Draw() error {
 		}
 
 		g.ls.DrawLine(g.dc, x, y, originY)
+
+		g.dc.SetRGB(0, 0, 0)
+
+		if len(g.pointLabels) <= i || len(g.pointLabels[i]) != len(x) {
+			continue
+		}
+
+		for j := range x {
+			g.dc.DrawStringAnchored(g.pointLabels[i][j], x[j]+10, y[j]+10, 0, 0)
+		}
 	}
 
 	g.dc.Stroke()
@@ -232,65 +249,6 @@ func ScaleArray(arr []float64, scale func(float64) float64) []float64 {
 	return scaled
 }
 
-// Plot draws axes and the plot for given x and y arrays, and saves the PNG file.
-func Plot(x, y []float64, filename string, line_style *LineStyle, replace ...bool) error {
-	if len(x) == 0 || len(y) == 0 {
-		return fmt.Errorf("x and y arrays must not be empty")
-	}
-
-	dc := gg.NewContext(wwidth, wheight)
-	dc.SetRGB(1, 1, 1)
-	dc.Clear()
-
-	// minX, maxX, minY, maxY := Borders(x, y)
-	// scaleX := wwidth / (maxX - minX)
-	// scaleY := wheight / (maxY - minY)
-
-	// originX := -minX * scaleX
-	// originY := wheight - (-minY * scaleY)
-
-	// dc.SetRGB(0.3, 0.3, 0.3)
-	// dc.SetLineWidth(2)
-	// dc.DrawLine(0, originY, wwidth, originY)
-	// dc.Stroke()
-	// dc.DrawLine(originX, 0, originX, wheight)
-	// dc.Stroke()
-
-	// dc.SetLineWidth(1)
-
-	// if err := drawAxesLabels(dc, minX, maxX, minY, maxY, originX, originY, scaleX, scaleY); err != nil {
-	// 	return err
-	// }
-
-	// dc.SetRGB(0, 0, 1)
-	// line_style.SetLineParams(dc)
-
-	// xScale := scaledX(minX, scaleX)
-	// yScale := scaledY(minY, scaleY)
-
-	// if line_style.IsSolid() {
-	// 	dc.MoveTo(xScale(x[0]), yScale(y[0]))
-	// }
-
-	// for i := range x {
-	// 	line_style.DrawLine(dc, xScale(x[i]), yScale(y[i]), originY)
-	// }
-	// dc.Stroke()
-
-	name := strings.TrimSuffix(filename, ".png")
-	ext := ".png"
-	if len(replace) > 0 && !replace[0] {
-		for i := 1; ; i++ {
-			if _, err := os.Stat(name + "_" + strconv.Itoa(i) + ext); err != nil && os.IsNotExist(err) {
-				name = name + "_" + strconv.Itoa(i)
-				break
-			}
-		}
-	}
-
-	return dc.SavePNG(name + ext)
-}
-
 // IntegersInRange returns a slice of all integers between min and max (inclusive).
 func IntegersInRange(min, max float64) []int {
 	start := int(math.Ceil(min))
@@ -305,7 +263,7 @@ func IntegersInRange(min, max float64) []int {
 	return result
 }
 
-func toFloatSlice(ints []int) []float64 {
+func ToFloatSlice(ints []int) []float64 {
 	floats := make([]float64, len(ints))
 	for i, v := range ints {
 		floats[i] = float64(v)
@@ -326,7 +284,7 @@ func computeTicks(ints []int, min, max float64) []float64 {
 	}
 
 	if len(ints) <= 20 {
-		return toFloatSlice(ints)
+		return ToFloatSlice(ints)
 	}
 
 	step := int(math.Ceil(float64(len(ints)) / 20.0))
@@ -336,15 +294,10 @@ func computeTicks(ints []int, min, max float64) []float64 {
 		ticks = append(ticks, ints[i])
 	}
 
-	return toFloatSlice(ticks)
+	return ToFloatSlice(ticks)
 }
 
 func drawAxesLabels(dc *gg.Context, minX, maxX, minY, maxY, originX, originY, scaleX, scaleY float64) error {
-	err := dc.LoadFontFace("ArialMT.ttf", 14)
-	if err != nil {
-		return err
-	}
-
 	xInts := IntegersInRange(minX, maxX)
 	yInts := IntegersInRange(minY, maxY)
 
