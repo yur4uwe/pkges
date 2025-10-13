@@ -62,17 +62,19 @@ func (g *Graph) SavePNG(filename string, replace ...bool) error {
 }
 
 func (g *Graph) Plot(x, y []float64, labels ...[]string) {
-	if len(x) == 0 || len(y) == 0 || (len(labels[0]) != len(x)) {
+	if len(x) == 0 || len(y) == 0 || (len(labels) > 0 && len(labels[0]) != len(x)) {
 		return
 	}
 
 	if len(x) != len(y) {
-		panic("x and y arrays must have the same length")
+		panic(fmt.Sprintf("x and y arrays must have the same length: %d != %d", len(x), len(y)))
 	}
 
 	g.xArgs = append(g.xArgs, x)
 	g.yArgs = append(g.yArgs, y)
-	g.pointLabels = append(g.pointLabels, labels[0])
+	if len(labels) > 0 && len(labels[0]) == len(x) {
+		g.pointLabels = append(g.pointLabels, labels[0])
+	}
 }
 
 func (g *Graph) Borders() (float64, float64, float64, float64) {
