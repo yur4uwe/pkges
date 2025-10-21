@@ -42,6 +42,8 @@ func (ls *LineStyle) Solid(width ...float64) {
 	ls.solid = true
 	if len(width) > 0 {
 		ls.solidWidth = width[0]
+	} else {
+		ls.solidWidth = 2
 	}
 }
 
@@ -49,6 +51,8 @@ func (ls *LineStyle) Dots(radius ...float64) {
 	ls.dots = true
 	if len(radius) > 0 {
 		ls.dotsRadius = radius[0]
+	} else {
+		ls.dotsRadius = 5
 	}
 }
 
@@ -56,6 +60,8 @@ func (ls *LineStyle) Pillars(width ...float64) {
 	ls.pillars = true
 	if len(width) > 0 {
 		ls.pillarsWidth = width[0]
+	} else {
+		ls.pillarsWidth = 2
 	}
 }
 
@@ -86,7 +92,7 @@ func (ls *LineStyle) DrawLine(dc *gg.Context, x, y []float64, originY float64) {
 
 	if ls.dots {
 		for i := range x {
-			dc.DrawCircle(x[i], y[i], 5)
+			dc.DrawCircle(x[i], y[i], ls.dotsRadius)
 			dc.Fill()
 		}
 	}

@@ -1,18 +1,17 @@
 package graph
 
 import (
+	_ "embed"
 	"fmt"
 	"math"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/fogleman/gg"
-)
-
-const (
-	wwidth  = 800.0
-	wheight = 400.0
+	"github.com/golang/freetype/truetype"
+	"golang.org/x/image/font"
 )
 
 var plotColors = [][3]float64{
@@ -24,24 +23,53 @@ var plotColors = [][3]float64{
 	{0, 0.7, 0.7}, // teal
 }
 
-type Graph struct {
-	dc          *gg.Context
-	ls          *LineStyle
-	xArgs       [][]float64
-	yArgs       [][]float64
-	pointLabels [][]string
+//go:embed fonts/ArialMT.ttf
+var fontBytes []byte
+
+var (
+	parsedFont *truetype.Font
+	fontOnce   sync.Once
+	fontErr    error
+)
+
+func loadFont() (*truetype.Font, error) {
+	fontOnce.Do(func() {
+		parsedFont, fontErr = truetype.Parse(fontBytes)
+	})
+	return parsedFont, fontErr
 }
 
-func NewGraph() *Graph {
-	dc := gg.NewContext(wwidth, wheight)
+func GetFontFace(size float64) (font.Face, error) {
+	f, err := loadFont()
+	if err != nil {
+		return nil, err
+	}
+
+	return truetype.NewFace(f, &truetype.Options{
+		Size: size,
+	}), nil
+}
+
+type Plot struct {
+	x      []float64
+	y      []float64
+	labels []string
+	ls     *LineStyle
+}
+
+type Graph struct {
+	dc     *gg.Context
+	width  int
+	height int
+	plots  []Plot
+}
+
+func NewGraph(w, h int) *Graph {
+	dc := gg.NewContext(w, h)
 	dc.SetRGB(1, 1, 1)
 	dc.Clear()
 
-	return &Graph{dc: dc, xArgs: make([][]float64, 0), yArgs: make([][]float64, 0)}
-}
-
-func (g *Graph) SetLineStyle(ls *LineStyle) {
-	g.ls = ls
+	return &Graph{dc: dc, plots: make([]Plot, 0), width: w, height: h}
 }
 
 func (g *Graph) SavePNG(filename string, replace ...bool) error {
@@ -61,8 +89,8 @@ func (g *Graph) SavePNG(filename string, replace ...bool) error {
 	return g.dc.SavePNG(name + ext)
 }
 
-func (g *Graph) Plot(x, y []float64, labels ...[]string) {
-	if len(x) == 0 || len(y) == 0 || (len(labels) > 0 && len(labels[0]) != len(x)) {
+func (g *Graph) Plot(x, y []float64, ls *LineStyle, labels ...[]string) {
+	if len(x) == 0 || len(y) == 0 || (len(labels) > 0 && len(labels[0]) != len(x)) || ls == nil {
 		return
 	}
 
@@ -70,20 +98,39 @@ func (g *Graph) Plot(x, y []float64, labels ...[]string) {
 		panic(fmt.Sprintf("x and y arrays must have the same length: %d != %d", len(x), len(y)))
 	}
 
-	g.xArgs = append(g.xArgs, x)
-	g.yArgs = append(g.yArgs, y)
-	if len(labels) > 0 && len(labels[0]) == len(x) {
-		g.pointLabels = append(g.pointLabels, labels[0])
+	lbs := make([]string, 0)
+	if len(labels) > 0 {
+		lbs = labels[0]
 	}
+
+	plot := Plot{
+		x:      x,
+		y:      y,
+		labels: lbs,
+		ls:     ls,
+	}
+
+	g.plots = append(g.plots, plot)
+}
+
+func (g *Graph) getFlattenedData() ([]float64, []float64) {
+	var xData []float64
+	var yData []float64
+
+	for _, plot := range g.plots {
+		xData = append(xData, plot.x...)
+		yData = append(yData, plot.y...)
+	}
+
+	return xData, yData
 }
 
 func (g *Graph) Borders() (float64, float64, float64, float64) {
-	if len(g.xArgs) == 0 || len(g.yArgs) == 0 {
+	if len(g.plots) == 0 {
 		return 0, 0, 0, 0
 	}
 
-	x := flatten(g.xArgs)
-	y := flatten(g.yArgs)
+	x, y := g.getFlattenedData()
 
 	if len(x) == 0 || len(y) == 0 {
 		return 0, 0, 0, 0
@@ -119,64 +166,65 @@ func (g *Graph) Borders() (float64, float64, float64, float64) {
 }
 
 func (g *Graph) Draw() error {
-	if len(g.xArgs) == 0 || len(g.yArgs) == 0 {
+	if len(g.plots) == 0 {
 		return fmt.Errorf("no data to plot")
 	}
 
-	if g.ls == nil {
-		return fmt.Errorf("line style is not set")
-	}
-
-	err := g.dc.LoadFontFace("ArialMT.ttf", 14)
+	font, err := GetFontFace(14)
 	if err != nil {
 		return err
 	}
 
+	g.dc.SetFontFace(font)
+
 	minX, maxX, minY, maxY := g.Borders()
-	scaleX := wwidth / (maxX - minX)
-	scaleY := wheight / (maxY - minY)
+	scaleX := float64(g.width) / (maxX - minX)
+	scaleY := float64(g.height) / (maxY - minY)
 
 	originX := -minX * scaleX
-	originY := wheight - (-minY * scaleY)
+	originY := float64(g.height) - (-minY * scaleY)
 
 	g.dc.SetRGB(0.3, 0.3, 0.3)
 	g.dc.SetLineWidth(2)
-	g.dc.DrawLine(0, originY, wwidth, originY)
+	g.dc.DrawLine(0, originY, float64(g.width), originY)
 	g.dc.Stroke()
-	g.dc.DrawLine(originX, 0, originX, wheight)
+	g.dc.DrawLine(originX, 0, originX, float64(g.height))
 	g.dc.Stroke()
 
 	g.dc.SetLineWidth(1)
 
-	if err := drawAxesLabels(g.dc, minX, maxX, minY, maxY, originX, originY, scaleX, scaleY); err != nil {
+	if err := g.drawAxesLabels(g.dc, minX, maxX, minY, maxY, originX, originY, scaleX, scaleY); err != nil {
 		return err
 	}
 
-	xScale := scaledX(minX, scaleX)
-	yScale := scaledY(minY, scaleY)
-	g.ls.SetLineParams(g.dc)
+	xScale := g.scaledX(minX, scaleX)
+	yScale := g.scaledY(minY, scaleY)
 
-	for i := range g.xArgs {
+	for i := range g.plots {
 		color := plotColors[i%len(plotColors)]
 		g.dc.SetRGB(color[0], color[1], color[2])
 
-		x := ScaleArray(g.xArgs[i], xScale)
-		y := ScaleArray(g.yArgs[i], yScale)
+		currPlot := g.plots[i]
 
-		if g.ls.IsSolid() {
+		currPlot.ls.SetLineParams(g.dc)
+
+		x := ScaleArray(currPlot.x, xScale)
+		y := ScaleArray(currPlot.y, yScale)
+
+		if currPlot.ls.IsSolid() {
 			g.dc.MoveTo(x[0], y[0])
 		}
 
-		g.ls.DrawLine(g.dc, x, y, originY)
+		currPlot.ls.DrawLine(g.dc, x, y, originY)
 
 		g.dc.SetRGB(0, 0, 0)
 
-		if len(g.pointLabels) <= i || len(g.pointLabels[i]) != len(x) {
+		if len(currPlot.labels) == 0 {
 			continue
 		}
 
 		for j := range x {
-			g.dc.DrawStringAnchored(g.pointLabels[i][j], x[j]+10, y[j]+10, 0, 0)
+			g.dc.DrawStringAnchored(currPlot.labels[j], x[j]+10, y[j]+10, 0, 0)
 		}
 	}
 
@@ -188,16 +236,7 @@ func (g *Graph) Draw() error {
 func (g *Graph) Clear() {
 	g.dc.SetRGB(1, 1, 1)
 	g.dc.Clear()
-	g.xArgs = make([][]float64, 0)
-	g.yArgs = make([][]float64, 0)
-}
-
-func flatten(arrays [][]float64) []float64 {
-	var result []float64
-	for _, array := range arrays {
-		result = append(result, array...)
-	}
-	return result
+	g.plots = make([]Plot, 0)
 }
 
 func IntLinearArray(min, max int) []float64 {
@@ -232,14 +271,14 @@ func LinearArray(min, max float64, length int) []float64 {
 	return norm
 }
 
-func scaledX(minX, scaleX float64) func(x float64) float64 {
+func (g *Graph) scaledX(minX, scaleX float64) func(x float64) float64 {
 	return func(x float64) float64 {
 		return (x - minX) * scaleX
 	}
 }
-func scaledY(minY, scaleY float64) func(y float64) float64 {
+func (g *Graph) scaledY(minY, scaleY float64) func(y float64) float64 {
 	return func(y float64) float64 {
-		return wheight - (y-minY)*scaleY
+		return float64(g.height) - (y-minY)*scaleY
 	}
 }
 
@@ -299,7 +338,7 @@ func computeTicks(ints []int, min, max float64) []float64 {
 	return ToFloatSlice(ticks)
 }
 
-func drawAxesLabels(dc *gg.Context, minX, maxX, minY, maxY, originX, originY, scaleX, scaleY float64) error {
+func (g *Graph) drawAxesLabels(dc *gg.Context, minX, maxX, minY, maxY, originX, originY, scaleX, scaleY float64) error {
 	xInts := IntegersInRange(minX, maxX)
 	yInts := IntegersInRange(minY, maxY)
 
@@ -312,23 +351,23 @@ func drawAxesLabels(dc *gg.Context, minX, maxX, minY, maxY, originX, originY, sc
 	dc.SetRGB(0.5, 0.5, 0.5)
 	for _, i := range xTicks {
 		xTick := (float64(i) - minX) * scaleX
-		dc.DrawLine(xTick, 0, xTick, wheight)
+		dc.DrawLine(xTick, 0, xTick, float64(g.height))
 		dc.Stroke()
 	}
 
 	for _, i := range yTicks {
-		yTick := wheight - (float64(i)-minY)*scaleY
-		dc.DrawLine(0, yTick, wwidth, yTick)
+		yTick := float64(g.height) - (float64(i)-minY)*scaleY
+		dc.DrawLine(0, yTick, float64(g.width), yTick)
 		dc.Stroke()
 	}
 
 	dc.SetRGB(0, 0, 0)
-	const minLabelDist = 20.0 // minimum pixel distance between labels
+	const minLabelDist = 20.0
 	lastXLabel := -1000.0
 	lastYLabel := -1000.0
 
-	xScaled := scaledX(minX, scaleX)
-	yScaled := scaledY(minY, scaleY)
+	xScaled := g.scaledX(minX, scaleX)
+	yScaled := g.scaledY(minY, scaleY)
 
 	for _, i := range xTicks {
 		xTick := xScaled(i)
